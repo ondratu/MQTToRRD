@@ -1,0 +1,4 @@
+rrdtool
+python-daemon
+lockfile
+paho-mqtt

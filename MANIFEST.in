@@ -1,0 +1,10 @@
+include *.py
+include *.rst
+include MANIFEST.in
+include COPYING
+include AUTHORS
+include ChangeLog
+include requirements.txt
+include mqttorrd.ini
+graft tests
+global-exclude *~ *.swp *.pyc
