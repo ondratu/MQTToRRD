@@ -1,6 +1,10 @@
 ChangeLog
 =========
 
+0.1.1
+-----
+ * Skip pidfile when process is not alive
+
 0.1.0
 -----
-* first daemon tool version
+ * first daemon tool version

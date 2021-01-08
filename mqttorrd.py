@@ -5,7 +5,6 @@ from argparse import ArgumentParser
 from traceback import format_exc
 from configparser import ConfigParser
 from re import match
-from sys import platform
 from os import access, R_OK, W_OK, makedirs, kill, geteuid
 from os.path import isdir, dirname, basename, join, exists
 from time import sleep
@@ -15,6 +14,7 @@ from signal import Signals, SIGTERM
 
 from logging.handlers import SysLogHandler, WatchedFileHandler
 import logging
+import sys
 
 from paho.mqtt.client import Client
 from daemon import DaemonContext
@@ -23,7 +23,7 @@ from rrdtool import (create as create_rrd, update as update_rrd,
                      ProgrammingError, OperationalError)
 
 __author__ = "Ondřej Tůma"
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __copyright__ = "Copyright 2018"
 __license__ = "BSD"
 __email__ = "mcbig@zeropage.cz"
@@ -31,6 +31,9 @@ __email__ = "mcbig@zeropage.cz"
 LOG_HANDLERS = ("syslog", "file")
 LOG_FORMAT = "%(asctime)s %(levelname)s: %(name)s: %(message)s "\
              "{%(funcName)s():%(lineno)d}"
+SYSLOG_FORMAT = "%(name)s[%(levelname)s]: %(message)s "\
+             "{%(funcName)s():%(lineno)d}"
+
 
 DS = "DS:{topic}:GAUGE:120:U:U"
 RRA = "RRA:AVERAGE:0.5:2:30,"\
@@ -40,11 +43,19 @@ RRA = "RRA:AVERAGE:0.5:2:30,"\
       "RRA:AVERAGE:0.5:720:744,"\
       "RRA:AVERAGE:0.5:1440:265"
 
+logger = logging.getLogger('MQTToRRD')
+
+# pylint: disable=too-many-branches
+# pylint: disable=too-many-return-statements
+# pylint: disable=too-many-statements
+
 
 class Config(ConfigParser):
     """Config object."""
+    # pylint: disable=too-many-ancestors
+    # pylint: disable=too-many-instance-attributes
     def __init__(self, args):
-        super(Config, self).__init__()
+        super().__init__()
         self.optionxform = str  # case insensitive
         if args.config:
             self.read(args.config)
@@ -64,8 +75,17 @@ class Config(ConfigParser):
         self.log_file = self.get(
             "logging", "file", fallback="/var/log/mqttorrd.log")
         self.log_syslog = self.get("logging", "syslog", fallback="/dev/log")
-        self.log_level = self.get("logging", "level", fallback="WARNING")
-        self.log_format = self.get("logging", "format", fallback=LOG_FORMAT)
+        if args.debug:
+            self.log_level = "DEBUG"
+        elif args.info:
+            self.log_level = "INFO"
+        else:
+            self.log_level = self.get("logging", "level", fallback="WARNING")
+
+        syslog = self.log_handler == "syslog"
+        self.log_format = self.get(
+            "logging", "format",
+            fallback=SYSLOG_FORMAT if syslog else LOG_FORMAT)
 
         # [mqtt]
         self.client_id = self.get("mqtt", "client_id", fallback=None)
@@ -89,7 +109,7 @@ class Config(ConfigParser):
         step = int(self.get(topic, "step", fallback="60"))
         rra = list(rra.strip()
                    for rra in self.get(topic, "RRA", fallback=RRA).split(','))
-        ds = self.get(topic, "DS", fallback=DS)
+        ds = self.get(topic, "DS", fallback=DS)  # pylint: disable=invalid-name
         return (step, ds, rra)
 
     def find_topic(self, topic):
@@ -119,7 +139,7 @@ class Daemon():
             self.handler = logging.StreamHandler()
             self.cfg.log_handler = "stderr"
         elif self.cfg.log_handler == "file":
-            if platform == 'windows':
+            if sys.platform == 'windows':
                 self.handler = logging.FileHandler(
                     self.cfg.log_file, encoding="utf-8")
             else:
@@ -129,8 +149,11 @@ class Daemon():
             self.handler = SysLogHandler(
                 self.cfg.log_syslog, SysLogHandler.LOG_DAEMON)
 
+        for hdlr in logger.root.handlers:  # reset root logger handlers
+            logger.root.removeHandler(hdlr)
+
+        logger.root.addHandler(self.handler)
         self.handler.setFormatter(formatter)
-        self.logger.addHandler(self.handler)
 
     def check(self):
         """Check configuration."""
@@ -155,8 +178,9 @@ class Daemon():
             raise RuntimeError("Could not write to log")
 
     @staticmethod
-    def on_connect(client, daemon, flags, rc):
+    def on_connect(client, daemon, flags, res):
         """connect mqtt handler."""
+        # pylint: disable=unused-argument
         daemon.logger.info("Connected to server")
         for sub in daemon.cfg.subscriptions:
             daemon.logger.info("Subscribing to topic: %s", sub)
@@ -164,6 +188,7 @@ class Daemon():
 
     @staticmethod
     def on_message(client, daemon, msg):
+        # pylint: disable=unused-argument
         """message mqtt handler."""
         daemon.logger.info(
             "Message received on topic %s with QoS %s and payload `%s'",
@@ -189,6 +214,7 @@ class Daemon():
             makedirs(dir_path)
         if not exists(rrd_path):
             self.logger.debug("Creatting RRD file %s", rrd_path)
+            # pylint: disable=invalid-name
             step, ds, rra = self.cfg.find_topic(topic)
             ds = ds.format(topic=basename(topic))
             try:
@@ -227,7 +253,7 @@ class Daemon():
                     "Connected to %s:%s", self.cfg.hostname, self.cfg.port)
                 self.client.loop_forever()
                 return 0
-            except Exception as exc:
+            except Exception as exc: # pylint: disable=broad-except
                 logging.debug("%s", format_exc())
                 self.logger.debug("%s", format_exc())
                 self.logger.fatal("%s", exc)
@@ -237,9 +263,19 @@ class Daemon():
 
     def shutdown(self, signum, frame):
         """Signal handler for termination."""
+        # pylint: disable=unused-argument
         self.logger.info("Shutting down with signal %s", Signals(signum).name)
         self.client.disconnect()
-        exit(1)
+        sys.exit(1)
+
+
+def check_process(pid):
+    """Check if process with pid is alive."""
+    try:
+        kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 def main():
@@ -254,6 +290,12 @@ def main():
         "-c", "--config", default="/etc/mqttorrd.ini", type=str,
         help="Path to config file.", metavar="<file>")
     parser.add_argument(
+        "-i", "--info", action="store_true",
+        help="more verbose logging level INFO is set")
+    parser.add_argument(
+        "-d", "--debug", action="store_true",
+        help="DEBUG logging level is set")
+    parser.add_argument(
         "-f", "--foreground", action="store_true",
         help="Run as script on foreground")
 
@@ -265,25 +307,34 @@ def main():
             return daemon.run(False)
 
         pid_file = PIDLockFile(config.pid_file)
+        pid = pid_file.read_pid() if pid_file.is_locked() else None
 
         if args.command == "stop":
-            if pid_file.is_locked():
-                daemon.logger.info(
-                    "Stoping service with pid %d", pid_file.read_pid())
-                kill(pid_file.read_pid(), SIGTERM)
+            if pid and check_process(pid):
+                print("Stopping service with pid", pid)
+                kill(pid, SIGTERM)
+            else:
+                print("Service not running")
             return 0
-        elif args.command == "status":
-            if pid_file.is_locked():
-                daemon.logger.info(
-                    "Service running with pid %d", pid_file.read_pid())
+
+        if args.command == "status":
+            if pid and check_process(pid):
+                print("Service running with pid", pid)
                 return 0
-            daemon.logger.info("Service not running")
+            print("Service not running")
             return 1
-        elif args.command == "restart":
-            if pid_file.is_locked():
-                daemon.logger.info(
-                    "Restarting service with pid %d", pid_file.read_pid())
-                kill(pid_file.read_pid(), SIGTERM)
+
+        if args.command == "restart":
+            if pid and check_process(pid):
+                print("Restarting service with pid", pid)
+                kill(pid, SIGTERM)
+
+        if pid:
+            if not check_process(pid):
+                pid_file.break_lock()
+            else:
+                print("Service is already running")
+                return 1
 
         context = DaemonContext(
             working_directory=config.data_dir,
@@ -294,18 +345,23 @@ def main():
             context.gid = config.gid
         if config.log_handler == "file":
             context.files_preserve = [daemon.handler.stream]
+        else:  # SysLogHandler
+            context.files_preserve = [daemon.handler.socket]
+
+        print("Starting service ...")
         with context:
             daemon.logger.info(
                 "Starting service with pid %d", pid_file.read_pid())
-            daemon.run()
-        return 0
-    except Exception as exc:
-        logging.info("%s", args)
-        logging.debug("%s", format_exc())
-        logging.fatal("%s", exc)
+            retval = daemon.run()
+            daemon.logger.info("Shutdown")
+            return retval
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.info("%s", args)
+        logger.debug("%s", format_exc())
+        logger.fatal("%s", exc)
         parser.error("%s" % exc)
         return 1
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

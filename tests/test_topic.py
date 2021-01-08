@@ -14,6 +14,7 @@ from mqttorrd import Config
 class Args():
     """Args mock."""
     config = None
+    debug = True
 
 
 class TestTopicParser(TestCase):
