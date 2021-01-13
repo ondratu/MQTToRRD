@@ -4,6 +4,7 @@ ChangeLog
 0.1.1
 -----
  * Skip pidfile when process is not alive
+ * Fix default RRA
 
 0.1.0
 -----

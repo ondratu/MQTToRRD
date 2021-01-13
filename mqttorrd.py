@@ -36,12 +36,12 @@ SYSLOG_FORMAT = "%(name)s[%(levelname)s]: %(message)s "\
 
 
 DS = "DS:{topic}:GAUGE:120:U:U"
-RRA = "RRA:AVERAGE:0.5:2:30,"\
+RRA = "RRA:AVERAGE:0.5:1:60,"\
       "RRA:AVERAGE:0.5:5:288,"\
-      "RRA:AVERAGE:0.5:30:336,"\
-      "RRA:AVERAGE:0.5:60:1488,"\
-      "RRA:AVERAGE:0.5:720:744,"\
-      "RRA:AVERAGE:0.5:1440:265"
+      "RRA:AVERAGE:0.5:15:672,"\
+      "RRA:AVERAGE:0.5:60:744,"\
+      "RRA:AVERAGE:0.5:720:732,"\
+      "RRA:AVERAGE:0.5:14400:732"
 
 logger = logging.getLogger('MQTToRRD')
 
