@@ -253,7 +253,7 @@ class Daemon():
                     "Connected to %s:%s", self.cfg.hostname, self.cfg.port)
                 self.client.loop_forever()
                 return 0
-            except Exception as exc: # pylint: disable=broad-except
+            except Exception as exc:  # pylint: disable=broad-except
                 logging.debug("%s", format_exc())
                 self.logger.debug("%s", format_exc())
                 self.logger.fatal("%s", exc)
@@ -304,6 +304,7 @@ def main():
         config = Config(args)
         daemon = Daemon(config, args.foreground)
         if args.foreground:
+            print("Starting process ...")
             return daemon.run(False)
 
         pid_file = PIDLockFile(config.pid_file)
