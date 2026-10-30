@@ -29,7 +29,7 @@ setup(
     scripts=["mqttorrd.py"],
     data_files=[("share/doc/mqttorrd",
                  ["README.rst", "COPYING", "ChangeLog", "AUTHORS",
-                  "CONTRIBUTION.rst"]),
+                  "CONTRIBUTING.rst"]),
                 ("share/doc/mqttorrd/example", ["mqttorrd.ini"])],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
